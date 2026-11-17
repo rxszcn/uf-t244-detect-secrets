@@ -53,6 +53,45 @@ class TestGetFilesToScan:
         assert len(results) > 2
 
     @staticmethod
+    def test_should_scan_explicit_file_alongside_directory(non_tracked_file):
+        results = set(
+            scan.get_files_to_scan(
+                non_tracked_file.name,
+                'test_data/short_files',
+                should_scan_all_files=False,
+            ),
+        )
+
+        # The explicitly named file must be included, even though it is not tracked by git
+        # and the directory argument triggers tracked-files filtering.
+        assert get_relative_path_if_in_cwd(non_tracked_file.name) in results
+
+        # The directory's tracked files must still be included as well.
+        assert len([x for x in results if x.startswith(str(Path('test_data/short_files')))]) > 1
+
+    @staticmethod
+    def test_should_scan_explicit_file_outside_git_repository(tmp_path):
+        explicit_file = tmp_path / 'config.env'
+        explicit_file.write_text('content does not matter')
+
+        subdirectory = tmp_path / 'subdir'
+        subdirectory.mkdir()
+        (subdirectory / 'other.txt').write_text('content does not matter')
+
+        results = list(
+            scan.get_files_to_scan(
+                str(explicit_file),
+                str(subdirectory),
+                root=str(tmp_path),
+            ),
+        )
+
+        # Even though git detection fails here, the explicitly named file must still
+        # be returned. The directory degrades to nothing, since we cannot determine
+        # which of its files are tracked.
+        assert results == ['config.env']
+
+    @staticmethod
     def test_handles_multiple_directories():
         directories = [Path('test_data/short_files'), Path('test_data/files')]
         results = list(scan.get_files_to_scan(*directories))

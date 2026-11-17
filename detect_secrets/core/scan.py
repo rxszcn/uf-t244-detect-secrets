@@ -57,9 +57,13 @@ def get_files_to_scan(
     if root:
         root = os.path.realpath(root)
 
-    # First, we determine the appropriate filtering mode to be used.
+    # First, we determine the appropriate filtering mode to be used for directories.
     # If this is True, then it will consider everything to be valid.
     # Otherwise, it will only list the files that are valid.
+    #
+    # NOTE: This only applies to directories. Explicitly named files are always
+    # considered valid (see the docstring above), regardless of whether they are
+    # tracked by git, or whether git is even available.
     valid_paths: Union[bool, Set[str]] = True
     for path in paths:
         # Since this is not a directory, we assume that it is a file proper, and automatically
@@ -78,16 +82,21 @@ def get_files_to_scan(
         # to initialize it once.
         break
 
-    if not valid_paths:
-        yield from []
-        return
-
     for path in paths:
-        iterator = (
-            cast(List[Tuple], [(root or os.getcwd(), None, [path])])
-            if os.path.isfile(path)
-            else os.walk(path)
-        )
+        if os.path.isfile(path):
+            # Explicitly named files bypass the tracked-files filter entirely: the user
+            # asked for this file by name, so it must be scannable even if it is
+            # untracked, or if the git lookup above failed (e.g. non-git directory).
+            iterator = cast(List[Tuple], [(root or os.getcwd(), None, [path])])
+            path_valid_paths: Union[bool, Set[str]] = True
+        else:
+            iterator = os.walk(path)
+            path_valid_paths = valid_paths
+
+        if not path_valid_paths:
+            # e.g. git repository was not detected, so we don't know which files
+            # in this directory are tracked.
+            continue
 
         for path_root, _, filenames in iterator:
             for filename in filenames:
@@ -100,8 +109,8 @@ def get_files_to_scan(
                     continue
 
                 if (
-                    valid_paths is True
-                    or relative_path in valid_paths
+                    path_valid_paths is True
+                    or relative_path in path_valid_paths
                 ):
                     yield relative_path
 
